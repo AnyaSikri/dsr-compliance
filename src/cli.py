@@ -148,7 +148,7 @@ def cmd_from_sections(args: argparse.Namespace) -> int:
         template_sections, mappings, config, args.scope, config.sections_dir,
     )
 
-    # Step 4b: Populate filled template from IB
+    # Step 4b: Populate filled template from IB (with LLM synthesis)
     logger.info("Step 4b: Populating filled template from IB")
     from .ib_extractor import build_ib_index
     from .template_populator import write_filled_template
@@ -156,6 +156,8 @@ def cmd_from_sections(args: argparse.Namespace) -> int:
     ib_index = build_ib_index(Path(args.ib))
     filled_paths = write_filled_template(
         template_sections, ib_index, config.traced_output_dir,
+        llm=llm,
+        dry_run=config.dry_run,
         pbrer_index=pbrer_index,
         literature_results=literature_results,
     )
@@ -271,7 +273,7 @@ def cmd_from_pdf(args: argparse.Namespace) -> int:
         template_sections, mappings, config, args.scope, sections_dir,
     )
 
-    # Step 4b: Populate filled template from IB
+    # Step 4b: Populate filled template from IB (with LLM synthesis)
     logger.info("Step 4b: Populating filled template from IB")
     from .ib_extractor import build_ib_index
     from .template_populator import write_filled_template
@@ -279,6 +281,8 @@ def cmd_from_pdf(args: argparse.Namespace) -> int:
     ib_index = build_ib_index(Path(args.ib))
     filled_paths = write_filled_template(
         template_sections, ib_index, config.traced_output_dir,
+        llm=llm,
+        dry_run=config.dry_run,
         pbrer_index=pbrer_index,
         literature_results=literature_results,
     )

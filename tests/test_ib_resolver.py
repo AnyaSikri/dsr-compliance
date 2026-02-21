@@ -121,7 +121,9 @@ class TestResolveSources:
         assert r.original_ref == "IB 9.9"
         assert r.source_type == "ib"
         assert r.section_num == "9.9"
-        assert r.content == "[CONTENT NOT FOUND: IB 9.9]"
+        assert "ADDITIONAL DATA NEEDED" in r.content
+        assert "IB" in r.content
+        assert "9.9" in r.content
         assert r.found is False
 
     def test_multiple_ib_refs(self, ib_index: dict[str, str]):
@@ -130,7 +132,7 @@ class TestResolveSources:
         assert result[0].found is True
         assert result[0].content == "This is the content of IB section 2.3."
         assert result[1].found is False
-        assert result[1].content == "[CONTENT NOT FOUND: IB 9.9]"
+        assert "ADDITIONAL DATA NEEDED" in result[1].content
         assert result[2].found is True
         assert result[2].content == "Adverse events summary."
 
@@ -141,7 +143,8 @@ class TestResolveSources:
         assert r.original_ref == "PBRER Section 5"
         assert r.source_type == "pbrer"
         assert r.section_num == "5"
-        assert r.content == "[MANUAL INPUT REQUIRED: PBRER Section 5]"
+        assert "ADDITIONAL DATA NEEDED" in r.content
+        assert "PBRER Section 5" in r.content
         assert r.found is False
 
     def test_bare_ib_placeholder(self, ib_index: dict[str, str]):
@@ -151,7 +154,8 @@ class TestResolveSources:
         assert r.original_ref == "IB"
         assert r.source_type == "ib"
         assert r.section_num is None
-        assert r.content == "[MANUAL INPUT REQUIRED: IB — no specific section referenced]"
+        assert "ADDITIONAL DATA NEEDED" in r.content
+        assert "Investigator's Brochure was referenced without" in r.content
         assert r.found is False
 
     def test_empty_sources(self, ib_index: dict[str, str]):
@@ -168,11 +172,13 @@ class TestResolveSources:
         # PBRER placeholder
         assert result[1].found is False
         assert result[1].source_type == "pbrer"
-        assert result[1].content == "[MANUAL INPUT REQUIRED: PBRER Section 5]"
+        assert "ADDITIONAL DATA NEEDED" in result[1].content
+        assert "PBRER Section 5" in result[1].content
         # External placeholder
         assert result[2].found is False
         assert result[2].source_type == "external"
-        assert result[2].content == "[MANUAL INPUT REQUIRED: UpToDate]"
+        assert "ADDITIONAL DATA NEEDED" in result[2].content
+        assert "UpToDate" in result[2].content
 
 
 # ---------------------------------------------------------------------------
@@ -229,13 +235,13 @@ class TestResolveSourcesMultiIndex:
         """Calling without pbrer_index still works (backward compat)."""
         result = resolve_sources(["PBRER 1.3"], ib_index)
         assert result[0].found is False
-        assert "MANUAL INPUT REQUIRED" in result[0].content
+        assert "ADDITIONAL DATA NEEDED" in result[0].content
 
     def test_backward_compatible_no_literature(self, ib_index):
         """Calling without literature_results still works."""
         result = resolve_sources(["UpToDate"], ib_index)
         assert result[0].found is False
-        assert "MANUAL INPUT REQUIRED" in result[0].content
+        assert "ADDITIONAL DATA NEEDED" in result[0].content
 
     def test_all_sources_together(self, ib_index, pbrer_index, literature_results):
         result = resolve_sources(

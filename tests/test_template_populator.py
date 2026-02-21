@@ -38,7 +38,8 @@ class TestAssembleMarkdown:
     def test_non_ib_ref_gets_placeholder(self):
         sections = [TemplateSection(section_id="2.1.3", title="Patient exposure", body="", required_sources=["PBRER Section 5"])]
         md = assemble_markdown(sections, self.ib_index)
-        assert "[MANUAL INPUT REQUIRED: PBRER Section 5]" in md
+        assert "ADDITIONAL DATA NEEDED" in md
+        assert "PBRER Section 5" in md
 
     def test_no_sources_keeps_body(self):
         sections = [TemplateSection(section_id="4", title="Discussion", body="Discuss findings here.", required_sources=[])]
@@ -49,12 +50,13 @@ class TestAssembleMarkdown:
     def test_ib_ref_not_found(self):
         sections = [TemplateSection(section_id="3.1", title="Review of toxicology data", body="", required_sources=["IB Section 4.3.3"])]
         md = assemble_markdown(sections, self.ib_index)
-        assert "[CONTENT NOT FOUND: IB Section 4.3.3]" in md
+        assert "ADDITIONAL DATA NEEDED" in md
+        assert "IB Section 4.3.3" in md
 
     def test_bare_ib_gets_placeholder(self):
         sections = [TemplateSection(section_id="2.1", title="Product Background", body="", required_sources=["IB"])]
         md = assemble_markdown(sections, self.ib_index)
-        assert "[MANUAL INPUT REQUIRED: IB" in md
+        assert "ADDITIONAL DATA NEEDED" in md
 
     def test_full_document_structure(self):
         # Verify ordering of sections

@@ -136,7 +136,7 @@ class TestMultiSourceAssembly:
         ]
         ib_index = {}
         md = assemble_markdown(sections, ib_index)
-        assert "MANUAL INPUT REQUIRED" in md
+        assert "ADDITIONAL DATA NEEDED" in md
 
     def test_ignore_section_excluded(self) -> None:
         """Sections marked ignore should not appear in output when filtered before assembly."""
@@ -161,9 +161,9 @@ class TestBackwardCompatibility:
         result = resolve_sources(["IB 2.3", "PBRER 1.3", "UpToDate"], ib_index)
         assert result[0].found is True
         assert result[1].found is False
-        assert "MANUAL INPUT REQUIRED" in result[1].content
+        assert "ADDITIONAL DATA NEEDED" in result[1].content
         assert result[2].found is False
-        assert "MANUAL INPUT REQUIRED" in result[2].content
+        assert "ADDITIONAL DATA NEEDED" in result[2].content
 
     def test_assemble_markdown_no_extra_params(self) -> None:
         """assemble_markdown with only ib_index works as before."""

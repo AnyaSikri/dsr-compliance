@@ -2,6 +2,7 @@
 
 Classifies template source references (IB, PBRER, external databases)
 and resolves IB references against a pre-built section index.
+Includes text cleaning to strip boilerplate from extracted PDF content.
 """
 
 from __future__ import annotations
@@ -9,6 +10,45 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from typing import Optional, Tuple
+
+# ---------------------------------------------------------------------------
+# Source text cleaning — strip boilerplate from extracted PDF content
+# ---------------------------------------------------------------------------
+
+_BOILERPLATE_PATTERNS = [
+    # IB header lines (any drug name)
+    re.compile(
+        r"^Investigator's Brochure:.*$", re.MULTILINE
+    ),
+    # Confidentiality banners
+    re.compile(r"^\s*CONFIDENTIAL\s*$", re.MULTILINE),
+    # Version/date lines
+    re.compile(
+        r"^Version\s+Number\s+\d+,\s+\w+\s+\d{4}\s*$", re.MULTILINE
+    ),
+    # Standalone page numbers (e.g. "24" or "151" on their own line)
+    re.compile(r"^\s*\d{1,3}\s*$", re.MULTILINE),
+    # "X of Y" page footers (e.g. "24\n151" pattern — two consecutive number lines)
+    re.compile(r"(?:^|\n)\s*\d{1,3}\s*\n\s*\d{1,3}\s*(?:\n|$)"),
+    # PBRER header lines
+    re.compile(
+        r"^Periodic\s+Benefit[\-\u2010\u2013]Risk.*$", re.MULTILINE | re.IGNORECASE
+    ),
+]
+
+
+def clean_source_text(text: str) -> str:
+    """Strip boilerplate headers, footers, and page numbers from source text.
+
+    Removes IB/PBRER confidentiality banners, version lines, and standalone
+    page numbers that leak into extracted PDF content.
+    """
+    for pattern in _BOILERPLATE_PATTERNS:
+        text = pattern.sub("", text)
+    # Collapse runs of 3+ blank lines into 2
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
 
 # Regex for IB references with an optional "Section" keyword and a dotted number.
 _IB_SECTION_RE = re.compile(
@@ -116,7 +156,7 @@ def resolve_sources(
                             original_ref=ref,
                             source_type=source_type,
                             section_num=section_num,
-                            content=text,
+                            content=clean_source_text(text),
                             found=True,
                         )
                     )
@@ -126,7 +166,11 @@ def resolve_sources(
                             original_ref=ref,
                             source_type=source_type,
                             section_num=section_num,
-                            content=f"[CONTENT NOT FOUND: {ref.strip()}]",
+                            content=(
+                                f"[ADDITIONAL DATA NEEDED: IB Section {section_num} "
+                                f"was referenced but not found in the extracted IB index. "
+                                f"Provide the content from Investigator's Brochure section {section_num}.]"
+                            ),
                             found=False,
                         )
                     )
@@ -136,7 +180,11 @@ def resolve_sources(
                         original_ref=ref,
                         source_type=source_type,
                         section_num=None,
-                        content="[MANUAL INPUT REQUIRED: IB \u2014 no specific section referenced]",
+                        content=(
+                            "[ADDITIONAL DATA NEEDED: The Investigator's Brochure was "
+                            "referenced without a specific section number. Review the IB "
+                            "and provide the relevant content for this section.]"
+                        ),
                         found=False,
                     )
                 )
@@ -150,18 +198,31 @@ def resolve_sources(
                             original_ref=ref,
                             source_type=source_type,
                             section_num=section_num,
-                            content=text,
+                            content=clean_source_text(text),
                             found=True,
                         )
                     )
                     continue
-            # PBRER not resolved — produce placeholder
+            # PBRER not resolved — produce descriptive placeholder
+            if section_num:
+                placeholder = (
+                    f"[ADDITIONAL DATA NEEDED: PBRER Section {section_num} "
+                    f"was referenced but could not be resolved. Provide the "
+                    f"PBRER PDF via --pbrer flag or manually supply the content "
+                    f"from PBRER section {section_num}.]"
+                )
+            else:
+                placeholder = (
+                    f"[ADDITIONAL DATA NEEDED: {ref.strip()} — provide the "
+                    f"PBRER PDF via --pbrer flag or manually supply the "
+                    f"relevant PBRER content for this section.]"
+                )
             results.append(
                 ResolvedSource(
                     original_ref=ref,
                     source_type=source_type,
                     section_num=section_num,
-                    content=f"[MANUAL INPUT REQUIRED: {ref.strip()}]",
+                    content=placeholder,
                     found=False,
                 )
             )
@@ -188,7 +249,12 @@ def resolve_sources(
                             original_ref=ref,
                             source_type=source_type,
                             section_num=None,
-                            content=f"[MANUAL INPUT REQUIRED: {ref.strip()}]",
+                            content=(
+                                f"[ADDITIONAL DATA NEEDED: External source '{ref.strip()}' "
+                                f"was referenced but no matching entry was found in the "
+                                f"literature index. Provide this data via --literature flag "
+                                f"with a JSON file containing a '{ref.strip()}' key.]"
+                            ),
                             found=False,
                         )
                     )
@@ -198,19 +264,27 @@ def resolve_sources(
                         original_ref=ref,
                         source_type=source_type,
                         section_num=None,
-                        content=f"[MANUAL INPUT REQUIRED: {ref.strip()}]",
+                        content=(
+                            f"[ADDITIONAL DATA NEEDED: External source '{ref.strip()}' "
+                            f"was referenced. Provide literature data via --literature "
+                            f"flag with a JSON file containing a '{ref.strip()}' key.]"
+                        ),
                         found=False,
                     )
                 )
 
         else:
-            # Unknown source type.
+            # Unknown source type — provide descriptive placeholder.
             results.append(
                 ResolvedSource(
                     original_ref=ref,
                     source_type=source_type,
                     section_num=None,
-                    content=f"[MANUAL INPUT REQUIRED: {ref.strip()}]",
+                    content=(
+                        f"[ADDITIONAL DATA NEEDED: Source '{ref.strip()}' could not "
+                        f"be classified or resolved. Manually provide the content "
+                        f"for this reference.]"
+                    ),
                     found=False,
                 )
             )
