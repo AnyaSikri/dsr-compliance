@@ -1,0 +1,255 @@
+Signal Assessment Report Template — extracted text
+
+
+===== PAGE 1 =====
+SIGNAL ASSESSMENT REPORT TEMPLATE 
+ 
+Page 1 of 6 
+Conﬁdential 
+Version 2025.11.20 
+ 
+ 
+Table of contents: 
+Executive Summary 
+1. Introduction 
+2. Background 
+2.1 
+Product Background 
+2.2 
+Event of interest 
+3. Review of data from all sources 
+3.1 
+Review of toxicology data 
+3.2 
+Review of clinical studies 
+3.3 
+Review of safety database 
+3.3.1 
+Methodology 
+3.3.2 
+Results 
+3.3.3 
+Summary 
+3.4 
+Literature review 
+3.5 
+Review of external databases 
+3.6 
+Biological plausibility 
+4. Discussion 
+5. Conclusion 
+6. References 
+Appendices 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+
+
+===== PAGE 2 =====
+SIGNAL ASSESSMENT REPORT TEMPLATE 
+ 
+Page 2 of 6 
+Conﬁdential 
+Version 2025.11.20 
+ 
+Executive Summary 
+This section provides a concise summary of the most important information contained in the 
+report.  
+The following information is included as applicable: 
+• Rationale for the preparation of the report i.e. source of the signal 
+-Suggest including relevant information from Introduction section 
+• Product specific information 
+- Suggest including relevant information from Background section 
+• Provide information on the event of interest 
+- Suggest including relevant information from Background section 
+• Describe all the applicable data sources and methods of evaluation used for the report 
+- 
+Suggest including relevant information from applicable sections as follows: 
+Toxicology data, clinical studies data, safety database, literature and external 
+databases 
+• Provide key results as needed 
+Suggest including relevant information from Discussion section – Summary of important 
+points from the evidence presented in Results section) 
+• Conclusion statement 
+- 
+Suggest including relevant information from Conclusion section 
+1. INTRODUCTION 
+Include the reason for this topic is being evaluated. Some examples of signal source include: 
+- 
+Routine signal detection practices 
+- 
+PRAC request 
+- 
+New signal identified in PSUR and PBRER 
+- 
+EU referral 
+- 
+Regulatory authority request 
+- 
+Product complaints 
+2. BACKGROUND 
+2.1 Product Background 
+Present the product specific information. IB includes the necessary information to include 
+in this section.  
+The version and date of the reference safety document currently being used must be 
+mentioned. 
+This section may contain the following information as needed: 
+
+
+===== PAGE 3 =====
+SIGNAL ASSESSMENT REPORT TEMPLATE 
+ 
+Page 3 of 6 
+Conﬁdential 
+Version 2025.11.20 
+ 
+o First approval date 
+o Pharmacology and therapeutic class of drug and mechanism of action 
+o Available formulation and dosing 
+o Indications  
+o Brief description of the population being treated, if relevant 
+2.1.1 Drug pharmacology 
+• Pharmacology and therapeutic class of the drug and Mechanism of action 
+(Reference: IB 2.3) 
+• Available formulation and dosing (Reference: IB 1.2-summarized version, 
+3.2: detailed version) 
+For Gavreto (Pralsetinib), the following is the template for this section: 
+Pralsetinib is a highly potent and selective inhibitor of oncogenic rearranged during 
+transfection (RET) fusion and mutant proteins. RET fusions are oncogenic drivers 
+in 1-2% of NSCLC, 10-20% of papillary thyroid cancer and, at lower prevalence, 
+below 1% across multiple other solid tumor types. Pralsetinib inhibits the ligand 
+independent constitutive activation of the RET tyrosine kinase activity and 
+therefore prevents downstream oncogenic cell signaling. 
+ 
+Pralsetinib was first granted marketing approval in the U.S. on 4 September 2020, 
+which marks the IBD. As of the Data Lock Point (DLP) of the latest Periodic 
+Benefit Risk Evaluation Report (PBRER) (DD Month YYYY), pralsetinib has been 
+approved in 61 countries worldwide. As of September 2024, Pralsetinib has been 
+deregistered in the majority of countries where it was initially authorized, after the 
+decision was taken to discontinue global marketing and development of the 
+program, except in the United States and Greater China. This action was not taken 
+due to any efficacy or safety findings in patients treated with pralsetinib. As of DD 
+Month YYYY, the global safety database and Market Authorization Holder (MAH) 
+status in the EU and US have been transferred from Roche to Blueprint Medicines. 
+Pralsetinib is available as hard capsules and the recommended dose is 400 mg once 
+daily. 
+ 
+2.1.2 Therapeutic Indications  
+This information can be retrieved from IB (Reference: IB 6.1) 
+For Gavreto (Pralsetinib), the following is the template for this section: 
+Non-Small Cell Lung Cancer 
+
+
+===== PAGE 4 =====
+SIGNAL ASSESSMENT REPORT TEMPLATE 
+ 
+Page 4 of 6 
+Conﬁdential 
+Version 2025.11.20 
+ 
+Pralsetinib is indicated for the treatment of adult patients with RET fusion-positive, locally 
+advanced or metastatic NSCLC (Gavreto CDS). 
+Thyroid cancer 
+Pralsetinib is indicated for the treatment of adult and pediatric patients 12 years of age 
+and older with locally advanced or metastatic RET-mutant Medullary Thyroid Cancer 
+(MTC) who require systemic therapy and locally advanced or metastatic RET fusion- 
+positive thyroid cancer who require systemic therapy and who are radioactive iodine 
+refractory (if radioactive iodine is appropriate) (Gavreto CDS). 
+2.1.3 Patient exposure  
+This information can be retrieved from PBRER Section 5. 
+For Gavreto (Pralsetinib), the following is the template for this section: 
+Since the Developmental International Birth Date (DIBD) (20 December 2016), an 
+estimated total of xxxx patients have received pralsetinib in clinical trial participation. 
+Since the IBD (i.e, 04 September 2020) until DLP of the latest PBRER (DD Month 
+YYYY), an estimated cumulative total of xxxx patients have received pralsetinib from 
+marketing experience. Additionally, a total of xxx patients enrolled and xxx received 
+Pralsetinib through other therapeutic use like pre-approval access, compassionate use 
+programs and expanded access programs 
+2.2 Event of Interest 
+o Provide case definition of the event of interest and add the source as well. 
+o If the event of interest is known for the drugs of same class or competitor 
+molecules, specify that. 
+o Epidemiology, Risk factors, diagnosis and treatment recommendations - 
+Reference: UptoDate 
+3 REVIEW OF DATA FROM ALL SOURCES 
+3.1 Toxicology data:  
+Toxicology data relevant to the event of interest, if known event in non-clinical 
+studies. (Reference document: IB Section 4.3.3) 
+3.2 Review of clinical studies: 
+3.3 Review of safety database: 
+3.3.1 Methodology 
+A search from DD Month YYYY to DD Month YYYY was performed in the company 
+safety database. This search was performed to identify all solicited (including 
+
+
+===== PAGE 5 =====
+SIGNAL ASSESSMENT REPORT TEMPLATE 
+ 
+Page 5 of 6 
+Conﬁdential 
+Version 2025.11.20 
+ 
+interventional clinical trials, non-interventional studies, market research and patient 
+support programs) and unsolicited cases, using Medical Dictionary for Regulatory 
+Activities (MedDRA) version XX.X, coded with the following Preferred Terms (PTs) or 
+High Level Term (HLT) or High Level Group Term (HLGT) and/or Standardized 
+MedDRA Query (SMQ) (narrow/broad) 
+3.3.2 Results 
+Stratify the cases as per the following parameters: Source of the report (clinical trials-
+sponsored and non-sponsored, compassionate use and post-marketing setting -solicited 
+and non-solicited or spontaneous), total no.of events, serious vs non-serious, Grade 3 or 
+higher events, Grade 5 events, causality -related or not related and outcome. 
+Template: 
+A total of xx cases (xx events) were reported, of which xx cases were reported from 
+clinical trials (xx from sponsored and xx from non-sponsored trials), xx were reported 
+from compassionate use, and the remaining xxx were from post marketing setting (xx 
+from solicited and xx from spontaneous sources). 
+Of the xxx events, xx were serious adverse events, of which xx were Grade 4 and xx 
+were Grade 5 events. The most frequently reported PTs were as follows: PT (n=xx), PT 
+(n=xx) …. 
+Case Narratives for Grade 4 and 5 events 
+3.4 Literature 
+3.4.1 Describe the methodology 
+3.4.2 Results 
+o Focus on the most relevant publications only 
+o Identify the following information: 
+• Background incidence rates in given population 
+• Drugs within the same class (event incidence, safety profile as applicable 
+to assessment) 
+• Drugs for the same or similar indication (event incidence, safety profile as 
+applicable to assessment) 
+o Present the literature by type: epidemiological studies (prospective, then retrospective), 
+published clinical studies, additional case reports. 
+Template language: 
+On DD Month YYYY, a literature search was conducted in Medline (DD Month YYYY 
+to DD Month YYYY) and Embase (DD Month YYYY to DD Month YYYY) for articles 
+reporting or discussing the product and safety signal. The following terms were queried: 
+
+
+===== PAGE 6 =====
+SIGNAL ASSESSMENT REPORT TEMPLATE 
+ 
+Page 6 of 6 
+Conﬁdential 
+Version 2025.11.20 
+ 
+No relevant publications were retrieved. 
+  
+ 
+OR 
+The following # relevant literature article (s) was (were) identified and is (are) discussed 
+below. 
+3.5 Review of external databases (if required) 
+ 
+3.6 Biological plausibility 
+ 
+4 DISCUSSION 
+5 CONCLUSION 
+6 REFERENCES 
+ 
+Appendices 
+ 
