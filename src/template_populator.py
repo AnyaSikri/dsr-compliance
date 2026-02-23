@@ -209,42 +209,275 @@ def _append_raw_sources(lines: list[str], resolved: list) -> None:
             lines.append(f"{rs.content}\n")
 
 
-def _markdown_to_docx(md_content: str, output_path: Path) -> None:
-    """Convert markdown text to a .docx file using python-docx.
+def _add_field_code(run, field_code: str) -> None:
+    """Insert a Word field code (e.g. PAGE, NUMPAGES, TOC) into a run."""
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
 
-    Conversion rules:
-    - Lines starting with ``#`` -> headings (level = number of hashes)
-    - Lines wrapped in single ``*`` -> italic paragraph (source labels)
-    - Lines starting with ``[MANUAL INPUT REQUIRED:`` or ``[CONTENT NOT FOUND:``
-      or ``[ADDITIONAL DATA NEEDED:`` -> bold paragraph
-    - Everything else -> normal paragraph
-    - Skip empty lines
+    fld_begin = OxmlElement("w:fldChar")
+    fld_begin.set(qn("w:fldCharType"), "begin")
+
+    instr = OxmlElement("w:instrText")
+    instr.set(qn("xml:space"), "preserve")
+    instr.text = field_code
+
+    fld_sep = OxmlElement("w:fldChar")
+    fld_sep.set(qn("w:fldCharType"), "separate")
+
+    fld_end = OxmlElement("w:fldChar")
+    fld_end.set(qn("w:fldCharType"), "end")
+
+    r = run._r
+    r.append(fld_begin)
+    r.append(instr)
+    r.append(fld_sep)
+    r.append(fld_end)
+
+
+def _setup_document(doc: Document) -> None:
+    """Configure document layout: margins, fonts, headers, footers, TOC."""
+    from docx.shared import Inches, Pt, RGBColor
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+    # --- Page layout ---
+    section = doc.sections[0]
+    section.left_margin = Inches(1.0)
+    section.right_margin = Inches(1.0)
+    section.top_margin = Inches(1.0)
+    section.bottom_margin = Inches(1.0)
+    section.header_distance = Inches(0.5)
+    section.footer_distance = Inches(0.5)
+    section.different_first_page_header_footer = True
+
+    # --- Default font ---
+    style = doc.styles["Normal"]
+    style.font.name = "Calibri"
+    style.font.size = Pt(11)
+    style.paragraph_format.space_after = Pt(6)
+
+    # --- Heading styles ---
+    for level in range(1, 5):
+        style_name = f"Heading {level}"
+        if style_name in doc.styles:
+            h_style = doc.styles[style_name]
+            h_style.font.name = "Calibri"
+            h_style.font.color.rgb = RGBColor(0x1F, 0x3A, 0x5F)
+
+    # --- Title page ---
+    title_para = doc.add_paragraph()
+    title_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    title_para.paragraph_format.space_before = Pt(120)
+    run = title_para.add_run("SIGNAL ASSESSMENT REPORT")
+    run.bold = True
+    run.font.size = Pt(24)
+    run.font.name = "Calibri"
+    run.font.color.rgb = RGBColor(0x1F, 0x3A, 0x5F)
+
+    subtitle = doc.add_paragraph()
+    subtitle.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    run = subtitle.add_run("Drug Safety Report")
+    run.font.size = Pt(14)
+    run.font.name = "Calibri"
+    run.font.color.rgb = RGBColor(0x4A, 0x4A, 0x4A)
+
+    confidential = doc.add_paragraph()
+    confidential.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    confidential.paragraph_format.space_before = Pt(48)
+    run = confidential.add_run("CONFIDENTIAL")
+    run.bold = True
+    run.font.size = Pt(12)
+    run.font.color.rgb = RGBColor(0xCC, 0x00, 0x00)
+
+    doc.add_page_break()
+
+    # --- Table of Contents page ---
+    toc_heading = doc.add_heading("Table of Contents", level=1)
+    toc_para = doc.add_paragraph()
+    toc_run = toc_para.add_run()
+    _add_field_code(toc_run, 'TOC \\o "1-3" \\h \\z \\u')
+
+    doc.add_page_break()
+
+    # --- Footer with page numbers (pages after title) ---
+    footer = section.footer
+    footer.is_linked_to_previous = False
+    footer_para = footer.paragraphs[0]
+    footer_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    footer_para.add_run("Page ")
+    page_run = footer_para.add_run()
+    _add_field_code(page_run, "PAGE")
+    footer_para.add_run(" of ")
+    total_run = footer_para.add_run()
+    _add_field_code(total_run, "NUMPAGES")
+
+    # --- Header (pages after title) ---
+    header = section.header
+    header.is_linked_to_previous = False
+    header_para = header.paragraphs[0]
+    header_para.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    run = header_para.add_run("Signal Assessment Report — Confidential")
+    run.font.size = Pt(8)
+    run.font.color.rgb = RGBColor(0x99, 0x99, 0x99)
+    run.italic = True
+
+
+def _add_rich_paragraph(doc: Document, text: str) -> None:
+    """Add a paragraph with inline markdown formatting (bold, italic).
+
+    Handles **bold**, *italic*, and mixed formatting within a single
+    paragraph.
     """
-    doc = Document()
+    p = doc.add_paragraph()
+    # Split on bold/italic markers and create runs
+    parts = re.split(r"(\*\*[^*]+\*\*|\*[^*]+\*)", text)
+    for part in parts:
+        if not part:
+            continue
+        if part.startswith("**") and part.endswith("**"):
+            run = p.add_run(part[2:-2])
+            run.bold = True
+        elif part.startswith("*") and part.endswith("*"):
+            run = p.add_run(part[1:-1])
+            run.italic = True
+        else:
+            p.add_run(part)
 
-    for line in md_content.split("\n"):
-        stripped = line.strip()
+
+def _add_markdown_table(doc: Document, lines: list[str], start_idx: int) -> int:
+    """Parse a markdown table starting at start_idx and add it to the doc.
+
+    Returns the index of the first line after the table.
+    """
+    from docx.shared import Pt, RGBColor
+    import docx.oxml
+
+    table_lines = []
+    idx = start_idx
+    while idx < len(lines) and "|" in lines[idx]:
+        table_lines.append(lines[idx].strip())
+        idx += 1
+
+    if len(table_lines) < 2:
+        return start_idx
+
+    # Parse header
+    header_cells = [c.strip() for c in table_lines[0].split("|") if c.strip()]
+
+    # Skip separator line (e.g. |---|---|)
+    data_start = 1
+    if data_start < len(table_lines) and re.match(r"^[\|\s\-:]+$", table_lines[data_start]):
+        data_start = 2
+
+    # Parse data rows
+    data_rows = []
+    for line in table_lines[data_start:]:
+        cells = [c.strip() for c in line.split("|") if c.strip()]
+        if cells:
+            data_rows.append(cells)
+
+    if not header_cells:
+        return start_idx
+
+    # Create table
+    num_cols = len(header_cells)
+    table = doc.add_table(rows=1 + len(data_rows), cols=num_cols)
+    table.style = "Table Grid"
+
+    # Header row
+    for i, cell_text in enumerate(header_cells):
+        if i < num_cols:
+            cell = table.rows[0].cells[i]
+            cell.text = cell_text
+            for paragraph in cell.paragraphs:
+                for run in paragraph.runs:
+                    run.bold = True
+                    run.font.size = Pt(10)
+            # Header shading
+            shading = docx.oxml.parse_xml(
+                f'<w:shd {docx.oxml.ns.nsdecls("w")} w:fill="1F3A5F"/>'
+            )
+            cell._tc.get_or_add_tcPr().append(shading)
+            for paragraph in cell.paragraphs:
+                for run in paragraph.runs:
+                    run.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+
+    # Data rows with alternating shading
+    for row_idx, row_data in enumerate(data_rows):
+        for col_idx, cell_text in enumerate(row_data):
+            if col_idx < num_cols:
+                cell = table.rows[row_idx + 1].cells[col_idx]
+                cell.text = cell_text
+                for paragraph in cell.paragraphs:
+                    for run in paragraph.runs:
+                        run.font.size = Pt(10)
+                # Alternating row color
+                if row_idx % 2 == 0:
+                    shading = docx.oxml.parse_xml(
+                        f'<w:shd {docx.oxml.ns.nsdecls("w")} w:fill="F2F2F2"/>'
+                    )
+                    cell._tc.get_or_add_tcPr().append(shading)
+
+    # Add spacing after table
+    doc.add_paragraph()
+    return idx
+
+
+def _markdown_to_docx(md_content: str, output_path: Path) -> None:
+    """Convert markdown text to a professional .docx file.
+
+    Produces a document with:
+    - Title page with report name and confidentiality notice
+    - Auto-updating Table of Contents
+    - Headers and footers with page numbers
+    - Proper heading styles (Calibri, navy blue)
+    - Formatted tables with header shading and alternating rows
+    - Inline bold/italic formatting
+    - Highlighted placeholder sections for missing data
+    """
+    from docx.shared import Pt, RGBColor
+
+    doc = Document()
+    _setup_document(doc)
+
+    lines = md_content.split("\n")
+    i = 0
+    while i < len(lines):
+        stripped = lines[i].strip()
+
         if not stripped:
+            i += 1
+            continue
+
+        # Skip the top-level title (already on the title page)
+        if stripped.startswith("# ") and not stripped.startswith("## "):
+            i += 1
             continue
 
         # Heading lines
         heading_match = re.match(r"^(#{1,6})\s+(.*)", stripped)
         if heading_match:
-            hashes = heading_match.group(1)
             heading_text = heading_match.group(2)
-            level = len(hashes)
-            doc.add_heading(heading_text, level=min(level, 9))
+            level = len(heading_match.group(1))
+            doc.add_heading(heading_text, level=min(level, 4))
+            i += 1
             continue
 
-        # Italic lines (wrapped in single asterisks)
-        italic_match = re.match(r"^\*([^*]+)\*$", stripped)
-        if italic_match:
-            p = doc.add_paragraph()
-            run = p.add_run(italic_match.group(1))
-            run.italic = True
+        # Markdown table
+        if "|" in stripped and stripped.startswith("|"):
+            new_i = _add_markdown_table(doc, lines, i)
+            if new_i > i:
+                i = new_i
+                continue
+
+        # Bullet list items
+        bullet_match = re.match(r"^[-*]\s+(.*)", stripped)
+        if bullet_match:
+            _add_rich_paragraph(doc, bullet_match.group(1))
+            doc.paragraphs[-1].style = "List Bullet"
+            i += 1
             continue
 
-        # Bold lines (placeholders)
+        # Placeholder lines — highlighted in yellow-ish with bold
         if (
             stripped.startswith("[MANUAL INPUT REQUIRED:")
             or stripped.startswith("[CONTENT NOT FOUND:")
@@ -253,10 +486,14 @@ def _markdown_to_docx(md_content: str, output_path: Path) -> None:
             p = doc.add_paragraph()
             run = p.add_run(stripped)
             run.bold = True
+            run.font.color.rgb = RGBColor(0xCC, 0x66, 0x00)
+            run.font.size = Pt(10)
+            i += 1
             continue
 
-        # Normal paragraph
-        doc.add_paragraph(stripped)
+        # Normal paragraph with inline formatting
+        _add_rich_paragraph(doc, stripped)
+        i += 1
 
     doc.save(str(output_path))
 

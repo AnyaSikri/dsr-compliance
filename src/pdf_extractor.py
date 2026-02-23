@@ -156,19 +156,31 @@ def _ocr_page(page: object, dpi: int = 300) -> str:
         return ""
 
 
-def extract_pdf(
-    pdf_path: Path,
-    config: Config,
-    llm: LLMClient,
-) -> tuple[list[DSRSection], Path]:
-    """Extract sections from a DSR PDF.
+def _extract_pages_markdown(pdf_path: Path, config: Config) -> list[str]:
+    """Extract pages as structured markdown using pymupdf4llm.
 
-    Returns (list of DSRSection, path to index CSV).
+    Falls back to plain PyMuPDF text extraction with OCR if pymupdf4llm
+    is not installed or fails.
     """
-    logger.info("Extracting PDF: %s", pdf_path.name)
-    doc = fitz.open(str(pdf_path))
+    try:
+        import pymupdf4llm
 
-    # --- Step 1: Extract full text page by page (with OCR fallback) ---
+        page_dicts = pymupdf4llm.to_markdown(
+            str(pdf_path),
+            page_chunks=True,
+            header=False,
+            footer=False,
+        )
+        pages = [chunk.get("text", "") for chunk in page_dicts]
+        logger.info("Extracted %d pages via pymupdf4llm (markdown)", len(pages))
+        return pages
+    except ImportError:
+        logger.info("pymupdf4llm not installed — falling back to plain text extraction")
+    except Exception as e:
+        logger.warning("pymupdf4llm extraction failed: %s — falling back to plain text", e)
+
+    # Fallback: plain PyMuPDF with OCR
+    doc = fitz.open(str(pdf_path))
     pages: list[str] = []
     for page in doc:
         text = page.get_text("text")
@@ -179,7 +191,25 @@ def extract_pdf(
                 text = ocr_text
         pages.append(text)
     doc.close()
-    logger.info("Extracted %d pages", len(pages))
+    logger.info("Extracted %d pages via PyMuPDF plain text", len(pages))
+    return pages
+
+
+def extract_pdf(
+    pdf_path: Path,
+    config: Config,
+    llm: LLMClient,
+) -> tuple[list[DSRSection], Path]:
+    """Extract sections from a DSR PDF.
+
+    Returns (list of DSRSection, path to index CSV).
+    """
+    logger.info("Extracting PDF: %s", pdf_path.name)
+
+    # --- Step 1: Extract full text page by page ---
+    # Prefer pymupdf4llm for structured markdown output; fall back to
+    # plain PyMuPDF with OCR if unavailable.
+    pages = _extract_pages_markdown(pdf_path, config)
 
     # --- Step 1b: Strip repeated headers/footers ---
     pages = _strip_headers_footers(pages)

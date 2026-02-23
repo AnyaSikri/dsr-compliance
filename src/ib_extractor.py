@@ -4,6 +4,10 @@ Extracts sections from an IB PDF using the document's Table of Contents
 (TOC) for section boundaries, then extracts text page-by-page.  Falls
 back to regex-based detection if no TOC is present.
 
+Uses pymupdf4llm for structured markdown extraction (tables, headings,
+formatting preserved).  Falls back to plain PyMuPDF if pymupdf4llm is
+not available.
+
 No API calls — pure local extraction.
 """
 
@@ -17,6 +21,36 @@ import fitz  # PyMuPDF
 from .models import DSRSection
 from .pdf_extractor import _detect_sections
 from .utils import logger
+
+
+def _extract_pages_markdown(pdf_path: Path) -> list[str]:
+    """Extract pages as structured markdown using pymupdf4llm.
+
+    Falls back to plain PyMuPDF text extraction if pymupdf4llm is not
+    installed.
+    """
+    try:
+        import pymupdf4llm
+
+        page_dicts = pymupdf4llm.to_markdown(
+            str(pdf_path),
+            page_chunks=True,
+            header=False,
+            footer=False,
+        )
+        pages = [chunk.get("text", "") for chunk in page_dicts]
+        logger.info("Extracted %d pages via pymupdf4llm (markdown)", len(pages))
+        return pages
+    except ImportError:
+        logger.info("pymupdf4llm not installed — falling back to plain text extraction")
+    except Exception as e:
+        logger.warning("pymupdf4llm extraction failed: %s — falling back to plain text", e)
+
+    doc = fitz.open(str(pdf_path))
+    pages = [page.get_text("text") for page in doc]
+    doc.close()
+    logger.info("Extracted %d pages via PyMuPDF plain text", len(pages))
+    return pages
 
 
 def _sections_to_index(sections: list[DSRSection]) -> dict[str, str]:
@@ -119,11 +153,11 @@ def build_ib_index(ib_pdf_path: Path) -> dict[str, str]:
     """
     logger.info("Building IB index from: %s", ib_pdf_path.name)
 
+    pages = _extract_pages_markdown(ib_pdf_path)
+
     doc = fitz.open(str(ib_pdf_path))
-    pages: list[str] = [page.get_text("text") for page in doc]
     toc = doc.get_toc()
     doc.close()
-    logger.info("Extracted %d pages from IB", len(pages))
 
     if toc:
         logger.info("IB has TOC with %d entries — using TOC-based extraction", len(toc))
