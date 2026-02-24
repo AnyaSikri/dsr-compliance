@@ -131,48 +131,70 @@ def assemble_markdown(
     lines: list[str] = ["# Filled Signal Assessment Report\n"]
     use_synthesis = llm is not None and not dry_run
 
-    # Build set of all section IDs to detect parent/child relationships.
-    # Parent sections whose children are also in the list get only a heading
-    # (no body/synthesis) to avoid duplicate content.
+    # Build lookup structures for dedup: skip children that have no
+    # required_sources when their parent section is already in the list
+    # (the parent's synthesized body already covers them).
     all_ids = {s.section_id for s in template_sections}
+    sections_with_sources = {
+        s.section_id for s in template_sections if s.required_sources
+    }
 
-    def _has_children(section_id: str) -> bool:
-        prefix = section_id + "."
-        return any(sid.startswith(prefix) for sid in all_ids)
+    def _parent_id(section_id: str) -> str | None:
+        """Return the parent section ID, e.g. '3.1' for '3.1.2'."""
+        parts = section_id.rsplit(".", 1)
+        return parts[0] if len(parts) > 1 else None
+
+    def _should_skip_child(section_id: str) -> bool:
+        """Skip a child section if it has no sources and its parent exists."""
+        pid = _parent_id(section_id)
+        return pid is not None and pid in all_ids and section_id not in sections_with_sources
+
+    # Track section content for Executive Summary second pass
+    section_contents: dict[str, str] = {}
 
     for section in template_sections:
         level = _heading_level(section.section_id)
         hashes = "#" * level
         lines.append(f"{hashes} {section.section_id} {section.title}\n")
 
-        # Skip body for parent sections whose children are also in the list
-        # to avoid duplicate content (children will provide their own content).
-        if _has_children(section.section_id):
+        # Skip children without their own sources when the parent section
+        # is in the list — the parent's body already covers them.
+        if _should_skip_child(section.section_id):
             continue
+
+        # Check if this is an Executive Summary subsection (1.x) — defer
+        # to the second pass so it can summarize the completed report.
+        is_exec_summary = (
+            section.section_id.startswith("1.")
+            and not section.required_sources
+            and use_synthesis
+        )
+        if is_exec_summary:
+            # Placeholder marker; will be replaced in second pass
+            lines.append(f"{{{{EXEC_SUMMARY_{section.section_id}}}}}\n")
+            continue
+
+        section_text = ""
 
         if not section.required_sources:
             # No sources referenced in template
             if use_synthesis and section.body:
-                # Synthesize even for sections without explicit sources —
-                # the LLM can produce a structured placeholder from the
-                # template instructions.
                 prompt = _build_synthesis_prompt(section, [])
                 try:
-                    content = llm.call(
+                    section_text = llm.call(
                         system_prompt=SYNTHESIS_SYSTEM,
                         user_prompt=prompt,
                         json_mode=False,
                         label=f"synth_{section.section_id}",
-                    )
-                    lines.append(f"{content.strip()}\n")
+                    ).strip()
                 except Exception as e:
                     logger.warning(
                         "Synthesis failed for %s: %s — falling back to template body",
                         section.section_id, e,
                     )
-                    lines.append(f"{section.body}\n")
+                    section_text = section.body
             elif section.body:
-                lines.append(f"{section.body}\n")
+                section_text = section.body
         else:
             # Resolve sources
             resolved = resolve_sources(
@@ -183,32 +205,124 @@ def assemble_markdown(
             )
 
             if use_synthesis:
-                # Collect resolved content for synthesis
                 source_contents: list[tuple[str, str]] = []
                 for rs in resolved:
                     source_contents.append((rs.original_ref, rs.content))
 
                 prompt = _build_synthesis_prompt(section, source_contents)
                 try:
-                    content = llm.call(
+                    section_text = llm.call(
                         system_prompt=SYNTHESIS_SYSTEM,
                         user_prompt=prompt,
                         json_mode=False,
                         label=f"synth_{section.section_id}",
-                    )
-                    lines.append(f"{content.strip()}\n")
+                    ).strip()
                 except Exception as e:
                     logger.warning(
                         "Synthesis failed for %s: %s — falling back to raw sources",
                         section.section_id, e,
                     )
-                    # Fall back to legacy raw paste
-                    _append_raw_sources(lines, resolved)
+                    raw_lines: list[str] = []
+                    _append_raw_sources(raw_lines, resolved)
+                    section_text = "\n".join(raw_lines)
             else:
-                # Legacy behavior: paste raw source content
-                _append_raw_sources(lines, resolved)
+                raw_lines = []
+                _append_raw_sources(raw_lines, resolved)
+                section_text = "\n".join(raw_lines)
+
+        if section_text:
+            lines.append(f"{section_text}\n")
+            section_contents[section.section_id] = section_text
+
+    # --- Second pass: fill Executive Summary from completed report ---
+    if use_synthesis:
+        _fill_executive_summary(lines, template_sections, section_contents, llm)
 
     return "\n".join(lines)
+
+
+EXEC_SUMMARY_SYSTEM = """\
+You are a regulatory medical writer producing the Executive Summary section \
+of a Drug Safety Report (DSR). You are given the completed content from the \
+main body sections of the report. Write a concise executive summary \
+subsection that synthesizes the key points from the report body.
+
+RULES:
+1. Write in formal regulatory prose.
+2. Base your summary ONLY on the report content provided — do not add \
+information not present in the source material.
+3. Be concise — each subsection should be 2-5 sentences.
+4. Preserve all specific data points: numbers, drug names, study names.
+5. Do NOT repeat the section heading.
+6. If there is genuinely insufficient data in the report body for a \
+particular summary subsection, write what you can and add: \
+"[ADDITIONAL DATA NEEDED: brief description]"\
+"""
+
+
+def _fill_executive_summary(
+    lines: list[str],
+    template_sections: list[TemplateSection],
+    section_contents: dict[str, str],
+    llm: LLMClient,
+) -> None:
+    """Replace Executive Summary placeholders with content from report body.
+
+    Feeds the completed report sections (3-7) into the LLM to generate
+    each Executive Summary subsection (1.1-1.6).
+    """
+    # Collect report body for context (sections 2+, truncated to fit)
+    body_parts: list[str] = []
+    for sid in sorted(section_contents.keys()):
+        if not sid.startswith("1"):
+            body_parts.append(f"--- Section {sid} ---\n{section_contents[sid]}")
+    report_body = "\n\n".join(body_parts)
+    # Truncate to ~30K chars to stay within token limits
+    if len(report_body) > 30000:
+        report_body = report_body[:30000] + "\n[... truncated ...]"
+
+    if not report_body.strip():
+        logger.warning("No report body content available for Executive Summary synthesis")
+        return
+
+    exec_sections = [
+        s for s in template_sections
+        if s.section_id.startswith("1.") and not s.required_sources
+    ]
+
+    for section in exec_sections:
+        marker = f"{{{{EXEC_SUMMARY_{section.section_id}}}}}"
+        # Check if marker exists in lines
+        found = False
+        for i, line in enumerate(lines):
+            if marker in line:
+                found = True
+                prompt = (
+                    f"SECTION: {section.section_id} — {section.title}\n\n"
+                    f"TEMPLATE GUIDANCE: {section.body or 'Summarize relevant findings.'}\n\n"
+                    f"COMPLETED REPORT BODY:\n{report_body}"
+                )
+                try:
+                    content = llm.call(
+                        system_prompt=EXEC_SUMMARY_SYSTEM,
+                        user_prompt=prompt,
+                        json_mode=False,
+                        label=f"exec_{section.section_id}",
+                    ).strip()
+                    lines[i] = f"{content}\n"
+                    logger.info("Filled Executive Summary %s from report body", section.section_id)
+                except Exception as e:
+                    logger.warning(
+                        "Executive Summary synthesis failed for %s: %s",
+                        section.section_id, e,
+                    )
+                    lines[i] = (
+                        f"[ADDITIONAL DATA NEEDED: Executive summary for "
+                        f"{section.title} — synthesis failed.]\n"
+                    )
+                break
+        if not found:
+            logger.debug("No placeholder found for exec summary %s", section.section_id)
 
 
 def _append_raw_sources(lines: list[str], resolved: list) -> None:
