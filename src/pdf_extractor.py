@@ -168,8 +168,6 @@ def _extract_pages_markdown(pdf_path: Path, config: Config) -> list[str]:
         page_dicts = pymupdf4llm.to_markdown(
             str(pdf_path),
             page_chunks=True,
-            header=False,
-            footer=False,
         )
         pages = [chunk.get("text", "") for chunk in page_dicts]
         logger.info("Extracted %d pages via pymupdf4llm (markdown)", len(pages))

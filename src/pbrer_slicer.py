@@ -36,8 +36,6 @@ def _extract_pages_markdown(pdf_path: Path, start: int, end: int) -> str:
             str(pdf_path),
             page_chunks=True,
             pages=list(range(start - 1, end)),
-            header=False,
-            footer=False,
         )
         parts = [chunk.get("text", "") for chunk in page_dicts]
         return "\n".join(parts)
