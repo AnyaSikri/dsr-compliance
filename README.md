@@ -64,7 +64,29 @@ python -m src.cli from-pdf \
   --scope "1.1-3.3.1"
 ```
 
-### With PBRER and literature sources
+### With PBRER (large PDFs)
+
+For large PBRERs (hundreds of pages), use the **PBRER slicer** to extract only the pages you need:
+
+```bash
+# Step 1: Slice specific page ranges into a JSON index
+python -m src.pbrer_slicer \
+  --pbrer data/template/pbrer.pdf \
+  --pages "5:1-20, 5.1:21-45, 5.2:46-80" \
+  --output data/template/pbrer_index.json
+
+# Step 2: Run the pipeline with the pre-built index
+python -m src.cli from-pdf \
+  --pdf data/template/dsr.pdf \
+  --template data/templates/signal_assessment_template.docx \
+  --ib data/template/ib.pdf \
+  --scope "1.1-3.3.1" \
+  --pbrer-index data/template/pbrer_index.json
+```
+
+The `--pages` format is `section_num:start_page-end_page`, comma-separated. Pages are 1-indexed.
+
+You can also pass a raw PBRER PDF directly (auto-extracts all pages):
 
 ```bash
 python -m src.cli from-pdf \
@@ -72,7 +94,18 @@ python -m src.cli from-pdf \
   --template data/templates/signal_assessment_template.docx \
   --ib data/input/ib.pdf \
   --scope "1.1-3.3.1" \
-  --pbrer data/input/pbrer.pdf \
+  --pbrer data/input/pbrer.pdf
+```
+
+### With literature sources
+
+```bash
+python -m src.cli from-pdf \
+  --pdf data/input/dsr.pdf \
+  --template data/templates/signal_assessment_template.docx \
+  --ib data/input/ib.pdf \
+  --scope "1.1-3.3.1" \
+  --pbrer-index data/template/pbrer_index.json \
   --literature data/input/literature.json
 ```
 
@@ -120,7 +153,8 @@ python -m src.cli from-pdf \
 | `--template` | Path to regulatory template (`.txt` or `.docx`) |
 | `--ib` | Path to Investigator's Brochure PDF |
 | `--scope` | Section range, e.g. `"1.1-3.3.1"` |
-| `--pbrer` | Path to PBRER PDF (optional) |
+| `--pbrer` | Path to PBRER PDF for auto-extraction (optional) |
+| `--pbrer-index` | Path to pre-built PBRER index JSON from `pbrer_slicer` (optional) |
 | `--literature` | Path to literature index JSON (optional) |
 | `--no-vectors` | Disable vector similarity matching |
 | `--model` | OpenAI model (default: `gpt-4o`) |
@@ -154,7 +188,8 @@ src/
   models.py           # Pydantic data models
   pdf_extractor.py    # PDF section extraction + tables + OCR
   ib_extractor.py     # IB PDF indexing
-  pbrer_extractor.py  # PBRER PDF indexing
+  pbrer_extractor.py  # PBRER PDF indexing (auto-extraction)
+  pbrer_slicer.py     # PBRER page slicer (targeted extraction)
   ib_resolver.py      # Source classification + multi-index resolution
   literature_resolver.py  # Clinical literature loader
   template_parser.py  # Template parsing (.txt/.docx) + mapping table
@@ -166,5 +201,5 @@ src/
   validators.py       # 10-check validation suite
   utils.py            # Logging and helpers
 tests/
-  test_*.py           # 125 tests
+  test_*.py           # 145 tests
 ```
