@@ -234,42 +234,142 @@ def assemble_markdown(
             lines.append(f"{section_text}\n")
             section_contents[section.section_id] = section_text
 
-    # --- Second pass: fill Executive Summary from completed report ---
+    # --- Second pass: fill Executive Summary from IB + completed report ---
     if use_synthesis:
-        _fill_executive_summary(lines, template_sections, section_contents, llm)
+        _fill_executive_summary(lines, template_sections, section_contents, ib_index, llm)
 
     return "\n".join(lines)
 
 
 EXEC_SUMMARY_SYSTEM = """\
 You are a regulatory medical writer producing the Executive Summary section \
-of a Drug Safety Report (DSR). You are given the completed content from the \
-main body sections of the report. Write a concise executive summary \
-subsection that synthesizes the key points from the report body.
+of a Drug Safety Report (DSR). You are given source material extracted \
+directly from the Investigator's Brochure (IB) and/or completed report \
+sections. Write the specified Executive Summary subsection using this \
+material.
 
 RULES:
-1. Write in formal regulatory prose.
-2. Base your summary ONLY on the report content provided — do not add \
-information not present in the source material.
-3. Be concise — each subsection should be 2-5 sentences.
-4. Preserve all specific data points: numbers, drug names, study names.
-5. Do NOT repeat the section heading.
-6. If there is genuinely insufficient data in the report body for a \
-particular summary subsection, write what you can and add: \
+1. Write in formal regulatory prose suitable for a DSR submission.
+2. Base your content ONLY on the source material provided — do not add \
+information not present in the sources.
+3. Be concise but thorough — each subsection should be 2-6 sentences, \
+covering the key data points.
+4. Preserve all specific data points exactly: drug names, mechanism of \
+action, indications, study names, patient counts, dates.
+5. Do NOT repeat the section heading — it is already added by the system.
+6. Format any tabular data as markdown tables.
+7. If the source material is insufficient, write what you can and add: \
 "[ADDITIONAL DATA NEEDED: brief description]"\
 """
+
+# ---------------------------------------------------------------------------
+# Executive Summary ↔ IB section mapping
+# ---------------------------------------------------------------------------
+# Maps Executive Summary subsection title keywords to specific IB section
+# numbers that contain the relevant source data.  This lets us feed focused
+# IB content into the synthesis prompt instead of the entire report body.
+
+_EXEC_IB_KEYWORDS: list[tuple[list[str], list[str]]] = [
+    # (title keywords, IB section numbers to pull)
+    (["rationale", "introduction", "reason"],
+     []),  # Signal-specific — no IB mapping, uses report body
+    (["product", "pharmacology", "drug background", "formulation", "dosing"],
+     ["2.3", "1.2", "3.2", "6.1"]),  # Pharmacology/MoA, formulation, dosing, indications
+    (["event of interest", "event", "adverse event"],
+     ["4.3.3", "6.3"]),  # Toxicology, warnings/precautions
+    (["data source", "methodology", "data evaluation"],
+     ["4.3.3", "5.5", "1.4.3"]),  # Toxicology, clinical studies, safety summary
+    (["result", "key finding", "key result"],
+     ["5.5", "1.4.3", "6.3"]),  # Clinical studies, safety summary, warnings
+    (["conclusion"],
+     []),  # From report conclusions, not IB directly
+    (["indication", "therapeutic"],
+     ["6.1"]),  # Indications
+    (["exposure", "patient exposure"],
+     ["5.5"]),  # Clinical studies / exposure data
+]
+
+
+def _resolve_ib_for_exec(
+    title: str,
+    body: str,
+    ib_index: dict[str, str],
+) -> list[tuple[str, str]]:
+    """Resolve IB sections relevant to an Executive Summary subsection.
+
+    Matches the subsection title against ``_EXEC_IB_KEYWORDS`` to find
+    which IB sections to pull.  Returns ``(label, content)`` pairs.
+    """
+    from .ib_resolver import clean_source_text
+
+    title_lower = title.lower()
+    body_lower = body.lower() if body else ""
+    combined = f"{title_lower} {body_lower}"
+
+    # Collect all matching IB section numbers
+    ib_sections_needed: list[str] = []
+    for keywords, ib_nums in _EXEC_IB_KEYWORDS:
+        if any(kw in combined for kw in keywords):
+            ib_sections_needed.extend(ib_nums)
+
+    # Deduplicate while preserving order
+    seen: set[str] = set()
+    unique_sections: list[str] = []
+    for num in ib_sections_needed:
+        if num not in seen:
+            seen.add(num)
+            unique_sections.append(num)
+
+    # Resolve each IB section from the index
+    results: list[tuple[str, str]] = []
+    for sec_num in unique_sections:
+        # Direct match
+        if sec_num in ib_index:
+            results.append((
+                f"IB Section {sec_num}",
+                clean_source_text(ib_index[sec_num]),
+            ))
+            continue
+        # Try prefix match — find subsections under this number
+        prefix = sec_num + "."
+        matched_parts: list[str] = []
+        for idx_num in sorted(ib_index.keys()):
+            if idx_num.startswith(prefix) and ib_index[idx_num].strip():
+                matched_parts.append(ib_index[idx_num])
+        if matched_parts:
+            results.append((
+                f"IB Section {sec_num} (subsections)",
+                clean_source_text("\n\n".join(matched_parts)),
+            ))
+
+    # Also search for "IB Table" references in the body text
+    import re as _re
+    table_matches = _re.findall(r"Table\s*(\d+)", body or "")
+    for table_num in table_matches:
+        for _sec_num, content in ib_index.items():
+            if _re.search(rf"\bTable\s*{_re.escape(table_num)}\b", content):
+                results.append((
+                    f"IB Table {table_num}",
+                    clean_source_text(content),
+                ))
+                break
+
+    return results
 
 
 def _fill_executive_summary(
     lines: list[str],
     template_sections: list[TemplateSection],
     section_contents: dict[str, str],
+    ib_index: dict[str, str],
     llm: LLMClient,
 ) -> None:
-    """Replace Executive Summary placeholders with content from report body.
+    """Replace Executive Summary placeholders with IB-sourced content.
 
-    Feeds the completed report sections (3-7) into the LLM to generate
-    each Executive Summary subsection (1.1-1.6).
+    For each Executive Summary subsection, resolves the relevant IB
+    sections based on the subsection title, and feeds that focused
+    source material (plus the completed report body for context) to
+    the LLM for synthesis.
     """
     # Collect report body for context (sections 2+, truncated to fit)
     body_parts: list[str] = []
@@ -277,13 +377,6 @@ def _fill_executive_summary(
         if not sid.startswith("1"):
             body_parts.append(f"--- Section {sid} ---\n{section_contents[sid]}")
     report_body = "\n\n".join(body_parts)
-    # Truncate to ~30K chars to stay within token limits
-    if len(report_body) > 30000:
-        report_body = report_body[:30000] + "\n[... truncated ...]"
-
-    if not report_body.strip():
-        logger.warning("No report body content available for Executive Summary synthesis")
-        return
 
     exec_sections = [
         s for s in template_sections
@@ -292,16 +385,68 @@ def _fill_executive_summary(
 
     for section in exec_sections:
         marker = f"{{{{EXEC_SUMMARY_{section.section_id}}}}}"
-        # Check if marker exists in lines
         found = False
         for i, line in enumerate(lines):
             if marker in line:
                 found = True
-                prompt = (
-                    f"SECTION: {section.section_id} — {section.title}\n\n"
-                    f"TEMPLATE GUIDANCE: {section.body or 'Summarize relevant findings.'}\n\n"
-                    f"COMPLETED REPORT BODY:\n{report_body}"
+
+                # Resolve IB content for this subsection
+                ib_sources = _resolve_ib_for_exec(
+                    section.title, section.body, ib_index,
                 )
+
+                # Build prompt with focused IB content
+                prompt_parts: list[str] = [
+                    f"SECTION: {section.section_id} — {section.title}",
+                    "",
+                ]
+
+                if section.body:
+                    prompt_parts.append(
+                        "TEMPLATE GUIDANCE (for your guidance, do NOT "
+                        "include these instructions in the output):"
+                    )
+                    prompt_parts.append(section.body)
+                    prompt_parts.append("")
+
+                if ib_sources:
+                    prompt_parts.append("SOURCE MATERIAL FROM INVESTIGATOR'S BROCHURE:")
+                    for label, content in ib_sources:
+                        # Truncate individual sources to stay within limits
+                        if len(content) > 8000:
+                            content = content[:8000] + "\n[... truncated ...]"
+                        prompt_parts.append(f"\n--- {label} ---")
+                        prompt_parts.append(content)
+                    prompt_parts.append("")
+
+                # Add relevant report body sections for additional context
+                if report_body.strip():
+                    # Truncate report body to leave room for IB content
+                    max_body = 15000 if ib_sources else 25000
+                    body_text = report_body
+                    if len(body_text) > max_body:
+                        body_text = body_text[:max_body] + "\n[... truncated ...]"
+                    prompt_parts.append("COMPLETED REPORT BODY (for additional context):")
+                    prompt_parts.append(body_text)
+
+                prompt = "\n".join(prompt_parts)
+
+                if not ib_sources and not report_body.strip():
+                    logger.warning(
+                        "No IB or report content for Executive Summary %s",
+                        section.section_id,
+                    )
+                    lines[i] = (
+                        f"[ADDITIONAL DATA NEEDED: No source material available "
+                        f"for {section.title}.]\n"
+                    )
+                    break
+
+                logger.info(
+                    "Synthesizing Executive Summary %s with %d IB sources",
+                    section.section_id, len(ib_sources),
+                )
+
                 try:
                     content = llm.call(
                         system_prompt=EXEC_SUMMARY_SYSTEM,
@@ -310,7 +455,10 @@ def _fill_executive_summary(
                         label=f"exec_{section.section_id}",
                     ).strip()
                     lines[i] = f"{content}\n"
-                    logger.info("Filled Executive Summary %s from report body", section.section_id)
+                    logger.info(
+                        "Filled Executive Summary %s (%d chars)",
+                        section.section_id, len(content),
+                    )
                 except Exception as e:
                     logger.warning(
                         "Executive Summary synthesis failed for %s: %s",
