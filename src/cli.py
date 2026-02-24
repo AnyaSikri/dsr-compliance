@@ -104,13 +104,7 @@ def cmd_from_sections(args: argparse.Namespace) -> int:
     logger.info("Loaded %d DSR sections", len(dsr_sections))
 
     # Step 2b: Build PBRER index if provided
-    pbrer_index: dict[str, str] | None = None
-    if getattr(args, "pbrer", None):
-        from .pbrer_extractor import build_pbrer_index
-
-        logger.info("Building PBRER index from %s", args.pbrer)
-        pbrer_index = build_pbrer_index(Path(args.pbrer))
-        logger.info("PBRER index: %d sections", len(pbrer_index))
+    pbrer_index = _load_pbrer_index(args)
 
     # Step 2c: Load literature index if provided
     literature_results: dict[str, str] | None = None
@@ -228,13 +222,7 @@ def cmd_from_pdf(args: argparse.Namespace) -> int:
         logger.info("Loaded %d mapping table entries from template", len(mapping_entries))
 
     # Step 2c: Build PBRER index if provided
-    pbrer_index: dict[str, str] | None = None
-    if getattr(args, "pbrer", None):
-        from .pbrer_extractor import build_pbrer_index
-
-        logger.info("Building PBRER index from %s", args.pbrer)
-        pbrer_index = build_pbrer_index(Path(args.pbrer))
-        logger.info("PBRER index: %d sections", len(pbrer_index))
+    pbrer_index = _load_pbrer_index(args)
 
     # Step 2d: Load literature index if provided
     literature_results: dict[str, str] | None = None
@@ -310,11 +298,35 @@ def cmd_from_pdf(args: argparse.Namespace) -> int:
         return 2
 
 
+def _load_pbrer_index(args: argparse.Namespace) -> dict[str, str] | None:
+    """Load PBRER index from --pbrer-index JSON or --pbrer PDF."""
+    if getattr(args, "pbrer_index", None):
+        import json
+        path = Path(args.pbrer_index)
+        logger.info("Loading pre-built PBRER index from %s", path)
+        index = json.loads(path.read_text(encoding="utf-8"))
+        logger.info("PBRER index: %d sections", len(index))
+        return index
+
+    if getattr(args, "pbrer", None):
+        from .pbrer_extractor import build_pbrer_index
+        logger.info("Building PBRER index from %s", args.pbrer)
+        index = build_pbrer_index(Path(args.pbrer))
+        logger.info("PBRER index: %d sections", len(index))
+        return index
+
+    return None
+
+
 def _add_common_enhancement_args(parser: argparse.ArgumentParser) -> None:
-    """Add --pbrer, --literature, --no-vectors to a subparser."""
+    """Add --pbrer, --pbrer-index, --literature, --no-vectors to a subparser."""
     parser.add_argument(
         "--pbrer", default=None,
-        help="Path to PBRER PDF for multi-source resolution",
+        help="Path to PBRER PDF for auto-extraction (all pages)",
+    )
+    parser.add_argument(
+        "--pbrer-index", default=None,
+        help="Path to pre-built PBRER index JSON (from pbrer_slicer)",
     )
     parser.add_argument(
         "--literature", default=None,
