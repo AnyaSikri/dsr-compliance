@@ -131,10 +131,24 @@ def assemble_markdown(
     lines: list[str] = ["# Filled Signal Assessment Report\n"]
     use_synthesis = llm is not None and not dry_run
 
+    # Build set of all section IDs to detect parent/child relationships.
+    # Parent sections whose children are also in the list get only a heading
+    # (no body/synthesis) to avoid duplicate content.
+    all_ids = {s.section_id for s in template_sections}
+
+    def _has_children(section_id: str) -> bool:
+        prefix = section_id + "."
+        return any(sid.startswith(prefix) for sid in all_ids)
+
     for section in template_sections:
         level = _heading_level(section.section_id)
         hashes = "#" * level
         lines.append(f"{hashes} {section.section_id} {section.title}\n")
+
+        # Skip body for parent sections whose children are also in the list
+        # to avoid duplicate content (children will provide their own content).
+        if _has_children(section.section_id):
+            continue
 
         if not section.required_sources:
             # No sources referenced in template

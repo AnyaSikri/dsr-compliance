@@ -4,7 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-from src.ib_resolver import ResolvedSource, classify_source, resolve_sources
+from src.ib_resolver import (
+    ResolvedSource,
+    _expand_compound_refs,
+    classify_source,
+    resolve_sources,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -86,6 +91,65 @@ class TestClassifySource:
 
     def test_unknown_empty(self):
         assert classify_source("") == ("unknown", None)
+
+    def test_ib_with_parenthetical(self):
+        assert classify_source("IB Section 2.3 (Pharmacology/MoA)") == ("ib", "2.3")
+
+    def test_ib_sections_plural(self):
+        assert classify_source("IB Sections 1.2") == ("ib", "1.2")
+
+    def test_ib_table_reference(self):
+        assert classify_source("IB Table 30") == ("ib_table", "30")
+
+    def test_ib_table_case_insensitive(self):
+        assert classify_source("ib table 5") == ("ib_table", "5")
+
+    def test_pbrer_with_parenthetical(self):
+        assert classify_source("PBRER Section 5 (Safety)") == ("pbrer", "5")
+
+    def test_pbrer_sections_plural(self):
+        assert classify_source("PBRER Sections 1.3") == ("pbrer", "1.3")
+
+
+# ---------------------------------------------------------------------------
+# _expand_compound_refs tests
+# ---------------------------------------------------------------------------
+
+
+class TestExpandCompoundRefs:
+    """Tests for _expand_compound_refs()."""
+
+    def test_single_ib_ref_unchanged(self):
+        assert _expand_compound_refs("IB Section 2.3") == ["IB Section 2.3"]
+
+    def test_comma_separated_ib_sections(self):
+        result = _expand_compound_refs("IB Sections 1.2, 3.2")
+        assert result == ["IB Section 1.2", "IB Section 3.2"]
+
+    def test_comma_separated_ib_section_singular(self):
+        result = _expand_compound_refs("IB Section 5.1, 5.6")
+        assert result == ["IB Section 5.1", "IB Section 5.6"]
+
+    def test_ampersand_separated(self):
+        result = _expand_compound_refs("IB Sections 2.3 & 4.1.2")
+        assert result == ["IB Section 2.3", "IB Section 4.1.2"]
+
+    def test_with_parenthetical(self):
+        result = _expand_compound_refs("IB Sections 1.2, 3.2 (Pharmacology/MoA)")
+        assert result == ["IB Section 1.2", "IB Section 3.2"]
+
+    def test_pbrer_comma_separated(self):
+        result = _expand_compound_refs("PBRER 1.1, 1.2")
+        assert result == ["PBRER 1.1", "PBRER 1.2"]
+
+    def test_single_pbrer_unchanged(self):
+        assert _expand_compound_refs("PBRER Section 5") == ["PBRER Section 5"]
+
+    def test_non_ib_pbrer_unchanged(self):
+        assert _expand_compound_refs("UpToDate") == ["UpToDate"]
+
+    def test_ib_table_unchanged(self):
+        assert _expand_compound_refs("IB Table 30") == ["IB Table 30"]
 
 
 # ---------------------------------------------------------------------------
@@ -250,4 +314,56 @@ class TestResolveSourcesMultiIndex:
             pbrer_index=pbrer_index,
             literature_results=literature_results,
         )
+        assert all(r.found for r in result)
+
+
+# ---------------------------------------------------------------------------
+# Compound reference and IB Table resolution tests
+# ---------------------------------------------------------------------------
+
+
+class TestCompoundAndTableResolution:
+    """Tests for compound ref expansion and IB Table resolution."""
+
+    @pytest.fixture()
+    def ib_index(self) -> dict[str, str]:
+        return {
+            "1.2": "Formulation details.",
+            "3.2": "Dosing information.",
+            "5.1": "Clinical trial exposure data.",
+            "5.6": "Post-marketing safety data.",
+            "6.4.1": "Table 30 Pralsetinib Treatment-Emergent Shifts in labs.",
+        }
+
+    def test_compound_ib_sections_resolved(self, ib_index):
+        result = resolve_sources(["IB Sections 1.2, 3.2"], ib_index)
+        assert len(result) == 2
+        assert result[0].found is True
+        assert result[0].content == "Formulation details."
+        assert result[1].found is True
+        assert result[1].content == "Dosing information."
+
+    def test_compound_ib_section_singular(self, ib_index):
+        result = resolve_sources(["IB Section 5.1, 5.6"], ib_index)
+        assert len(result) == 2
+        assert result[0].found is True
+        assert result[1].found is True
+
+    def test_ib_table_found(self, ib_index):
+        result = resolve_sources(["IB Table 30"], ib_index)
+        assert len(result) == 1
+        assert result[0].found is True
+        assert "Table 30" in result[0].content
+
+    def test_ib_table_not_found(self, ib_index):
+        result = resolve_sources(["IB Table 999"], ib_index)
+        assert len(result) == 1
+        assert result[0].found is False
+        assert "ADDITIONAL DATA NEEDED" in result[0].content
+
+    def test_compound_with_parenthetical(self, ib_index):
+        result = resolve_sources(
+            ["IB Sections 1.2, 3.2 (Formulations/Dosing)"], ib_index
+        )
+        assert len(result) == 2
         assert all(r.found for r in result)

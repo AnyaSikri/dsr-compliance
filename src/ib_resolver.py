@@ -50,18 +50,35 @@ def clean_source_text(text: str) -> str:
     return text.strip()
 
 
-# Regex for IB references with an optional "Section" keyword and a dotted number.
+# Regex for IB references with an optional "Section(s)" keyword and a dotted number.
+# Accepts trailing parenthetical descriptions like "(Pharmacology/MoA)".
 _IB_SECTION_RE = re.compile(
-    r"^\s*IB\s*(?:Section\s*)?(\d+(?:\.\d+)*)\s*$",
+    r"^\s*IB\s*(?:Sections?\s*)?(\d+(?:\.\d+)*)\s*(?:\(.*\))?\s*$",
+    re.IGNORECASE,
+)
+
+# Regex for "IB Table X" references.
+_IB_TABLE_RE = re.compile(
+    r"^\s*IB\s*Table\s*(\d+)",
     re.IGNORECASE,
 )
 
 # Regex for bare "IB" (no section number).
 _IB_BARE_RE = re.compile(r"^\s*IB\s*$", re.IGNORECASE)
 
-# Regex for PBRER references with an optional "Section" keyword and a dotted number.
+# Regex for PBRER references with an optional "Section(s)" keyword and a dotted number.
 _PBRER_SECTION_RE = re.compile(
-    r"^\s*PBRER\s*(?:Section\s*)?(\d+(?:\.\d+)*)\s*$",
+    r"^\s*PBRER\s*(?:Sections?\s*)?(\d+(?:\.\d+)*)\s*(?:\(.*\))?\s*$",
+    re.IGNORECASE,
+)
+
+# Regex for compound references: "IB Sections 1.2, 3.2" or "IB Section 5.1, 5.6"
+_COMPOUND_IB_RE = re.compile(
+    r"^\s*IB\s*Sections?\s*([\d.,\s/&]+(?:\.\d+)*.*?)\s*(?:\(.*\))?\s*$",
+    re.IGNORECASE,
+)
+_COMPOUND_PBRER_RE = re.compile(
+    r"^\s*PBRER\s*(?:Sections?\s*)?([\d.,\s/&]+(?:\.\d+)*.*?)\s*(?:\(.*\))?\s*$",
     re.IGNORECASE,
 )
 
@@ -75,18 +92,73 @@ _EXTERNAL_KEYWORDS = [
 ]
 
 
+def _expand_compound_refs(ref: str) -> list[str]:
+    """Expand compound source references into individual refs.
+
+    Handles patterns like:
+    - ``"IB Sections 1.2, 3.2"`` → ``["IB Section 1.2", "IB Section 3.2"]``
+    - ``"IB Section 5.1, 5.6"`` → ``["IB Section 5.1", "IB Section 5.6"]``
+    - ``"PBRER 1.1 & 1.2"`` → ``["PBRER 1.1", "PBRER 1.2"]``
+
+    Returns a list of individual references.  If the input is not a
+    compound reference (i.e. has only one section number), returns
+    ``[ref]`` unchanged.
+    """
+    stripped = ref.strip()
+
+    # Strip parenthetical descriptions for parsing
+    cleaned = re.sub(r"\([^)]*\)", "", stripped).strip()
+
+    # Check for IB compound pattern
+    m = _COMPOUND_IB_RE.match(cleaned)
+    if m:
+        nums_str = m.group(1)
+        # Split on comma, ampersand, slash, or "and"
+        nums = re.split(r"[,&/]|\band\b", nums_str)
+        result = []
+        for n in nums:
+            n = n.strip()
+            if re.match(r"^\d+(?:\.\d+)*$", n):
+                result.append(f"IB Section {n}")
+        # Only expand if we found multiple numbers
+        if len(result) > 1:
+            return result
+
+    # Check for PBRER compound pattern
+    m = _COMPOUND_PBRER_RE.match(cleaned)
+    if m:
+        nums_str = m.group(1)
+        nums = re.split(r"[,&/]|\band\b", nums_str)
+        result = []
+        for n in nums:
+            n = n.strip()
+            if re.match(r"^\d+(?:\.\d+)*$", n):
+                result.append(f"PBRER {n}")
+        # Only expand if we found multiple numbers
+        if len(result) > 1:
+            return result
+
+    return [ref]
+
+
 def classify_source(source: str) -> Tuple[str, Optional[str]]:
     """Classify a required_source string into a type and optional section number.
 
     Returns:
         A ``(source_type, section_number)`` tuple where *source_type* is one of
-        ``"ib"``, ``"pbrer"``, ``"external"``, or ``"unknown"``; and
-        *section_number* is a dotted-decimal string for IB refs or ``None``.
+        ``"ib"``, ``"ib_table"``, ``"pbrer"``, ``"external"``, or ``"unknown"``; and
+        *section_number* is a dotted-decimal string for IB/PBRER refs,
+        a table number string for ``"ib_table"``, or ``None``.
     """
     # Try IB with section number first.
     m = _IB_SECTION_RE.match(source)
     if m:
         return ("ib", m.group(1))
+
+    # IB Table reference (e.g. "IB Table 30").
+    m = _IB_TABLE_RE.match(source)
+    if m:
+        return ("ib_table", m.group(1))
 
     # Bare IB.
     if _IB_BARE_RE.match(source):
@@ -143,11 +215,49 @@ def resolve_sources(
     if not required_sources:
         return []
 
-    results: list[ResolvedSource] = []
+    # Expand compound references (e.g. "IB Sections 1.2, 3.2" → two refs)
+    expanded: list[str] = []
     for ref in required_sources:
+        expanded.extend(_expand_compound_refs(ref))
+
+    results: list[ResolvedSource] = []
+    for ref in expanded:
         source_type, section_num = classify_source(ref)
 
-        if source_type == "ib":
+        if source_type == "ib_table":
+            # Search the IB index for content containing "Table {num}"
+            table_num = section_num
+            found_content = None
+            for sec_num, content in ib_index.items():
+                if re.search(rf"\bTable\s*{re.escape(table_num)}\b", content):
+                    found_content = content
+                    break
+            if found_content:
+                results.append(
+                    ResolvedSource(
+                        original_ref=ref,
+                        source_type="ib",
+                        section_num=None,
+                        content=clean_source_text(found_content),
+                        found=True,
+                    )
+                )
+            else:
+                results.append(
+                    ResolvedSource(
+                        original_ref=ref,
+                        source_type="ib",
+                        section_num=None,
+                        content=(
+                            f"[ADDITIONAL DATA NEEDED: IB Table {table_num} "
+                            f"was referenced but could not be located in the "
+                            f"extracted IB content.]"
+                        ),
+                        found=False,
+                    )
+                )
+
+        elif source_type == "ib":
             if section_num is not None:
                 text = ib_index.get(section_num)
                 if text is not None:
