@@ -2,28 +2,64 @@
 
 Generates Signal Assessment Reports from regulatory templates and Investigator's Brochure (IB) PDFs. Supports `.txt` and `.docx` templates, multi-source resolution (IB + PBRER + literature), and vector similarity matching.
 
-## Setup
+## Quick Start (New Laptop)
 
-### 1. Create a virtual environment
+Follow these steps in order to go from a fresh clone to a completed report.
+
+### Step 1: Clone and install
 
 ```bash
+git clone https://github.com/AnyaSikri/dsr-compliance.git
+cd dsr-compliance
 python -m venv venv
 source venv/bin/activate
-```
-
-### 2. Install dependencies
-
-```bash
 pip install -r requirements.txt
 ```
 
-### 3. Export your OpenAI API key
+### Step 2: Set your OpenAI API key
 
 ```bash
 export OPENAI_API_KEY="sk-your-key-here"
 ```
 
-## Usage
+### Step 3: Place your files
+
+Put your input files in `data/template/`:
+
+```
+data/template/
+  dsr.pdf                              # Drug Safety Report PDF
+  ib.pdf                               # Investigator's Brochure PDF
+  pbrer.pdf                            # PBRER PDF (if you have one)
+  signal_assessment_template.docx      # Template (.docx or .txt)
+```
+
+### Step 4: Build the PBRER index (only needed once per PBRER)
+
+The PBRER is too large to process in full. Extract only the pages you need:
+
+```bash
+python -m src.pbrer_slicer --pbrer data/template/pbrer.pdf --pages "5:1-20, 5.1:21-45, 5.2:46-80" --output data/template/pbrer_index.json
+```
+
+The `--pages` format is `section_num:start_page-end_page`, comma-separated. Pages are 1-indexed. Adjust the page ranges to match your PBRER.
+
+### Step 5: Run the pipeline
+
+```bash
+python -m src.cli from-pdf --pdf data/template/dsr.pdf --template data/template/signal_assessment_template.docx --ib data/template/ib.pdf --scope "1-6" --pbrer-index data/template/pbrer_index.json --output-dir data/mappings
+```
+
+### Step 6: Find your output
+
+The filled report is in `data/output/`:
+
+- `filled_template.md` -- markdown version
+- `filled_template.docx` -- Word version
+
+---
+
+## Detailed Usage
 
 There are two subcommands: `from-pdf` (extract sections from a DSR PDF) and `from-sections` (use pre-split `.md` section files).
 
@@ -32,11 +68,7 @@ There are two subcommands: `from-pdf` (extract sections from a DSR PDF) and `fro
 Use this when you have a raw DSR PDF.
 
 ```bash
-python -m src.cli from-pdf \
-  --pdf data/input/dsr.pdf \
-  --template data/templates/signal_assessment_template.txt \
-  --ib data/input/ib.pdf \
-  --scope "1.1-3.3.1"
+python -m src.cli from-pdf --pdf data/template/dsr.pdf --template data/template/signal_assessment_template.docx --ib data/template/ib.pdf --scope "1-6" --pbrer-index data/template/pbrer_index.json --output-dir data/mappings
 ```
 
 ### from-sections
@@ -44,69 +76,13 @@ python -m src.cli from-pdf \
 Use this when you already have extracted section `.md` files and an index CSV.
 
 ```bash
-python -m src.cli from-sections \
-  --sections-dir data/input/dsr_sections/ \
-  --index-csv data/input/dsr_sections_index.csv \
-  --template data/templates/signal_assessment_template.txt \
-  --ib data/input/ib.pdf \
-  --scope "1.1-3.3.1"
-```
-
-### With a .docx template
-
-Both commands accept `.docx` templates. If the `.docx` contains a mapping table, it will be parsed automatically.
-
-```bash
-python -m src.cli from-pdf \
-  --pdf data/input/dsr.pdf \
-  --template data/templates/signal_assessment_template.docx \
-  --ib data/input/ib.pdf \
-  --scope "1.1-3.3.1"
-```
-
-### With PBRER (large PDFs)
-
-For large PBRERs (hundreds of pages), use the **PBRER slicer** to extract only the pages you need:
-
-```bash
-# Step 1: Slice specific page ranges into a JSON index
-python -m src.pbrer_slicer \
-  --pbrer data/template/pbrer.pdf \
-  --pages "5:1-20, 5.1:21-45, 5.2:46-80" \
-  --output data/template/pbrer_index.json
-
-# Step 2: Run the pipeline with the pre-built index
-python -m src.cli from-pdf \
-  --pdf data/template/dsr.pdf \
-  --template data/templates/signal_assessment_template.docx \
-  --ib data/template/ib.pdf \
-  --scope "1.1-3.3.1" \
-  --pbrer-index data/template/pbrer_index.json
-```
-
-The `--pages` format is `section_num:start_page-end_page`, comma-separated. Pages are 1-indexed.
-
-You can also pass a raw PBRER PDF directly (auto-extracts all pages):
-
-```bash
-python -m src.cli from-pdf \
-  --pdf data/input/dsr.pdf \
-  --template data/templates/signal_assessment_template.docx \
-  --ib data/input/ib.pdf \
-  --scope "1.1-3.3.1" \
-  --pbrer data/input/pbrer.pdf
+python -m src.cli from-sections --sections-dir data/input/dsr_sections/ --index-csv data/input/dsr_sections_index.csv --template data/template/signal_assessment_template.docx --ib data/template/ib.pdf --scope "1-6" --pbrer-index data/template/pbrer_index.json --output-dir data/mappings
 ```
 
 ### With literature sources
 
 ```bash
-python -m src.cli from-pdf \
-  --pdf data/input/dsr.pdf \
-  --template data/templates/signal_assessment_template.docx \
-  --ib data/input/ib.pdf \
-  --scope "1.1-3.3.1" \
-  --pbrer-index data/template/pbrer_index.json \
-  --literature data/input/literature.json
+python -m src.cli from-pdf --pdf data/template/dsr.pdf --template data/template/signal_assessment_template.docx --ib data/template/ib.pdf --scope "1-6" --pbrer-index data/template/pbrer_index.json --literature data/input/literature.json --output-dir data/mappings
 ```
 
 The literature JSON file should look like:
@@ -122,12 +98,7 @@ The literature JSON file should look like:
 ### Dry run (no API calls)
 
 ```bash
-python -m src.cli from-pdf \
-  --pdf data/input/dsr.pdf \
-  --template data/templates/signal_assessment_template.txt \
-  --ib data/input/ib.pdf \
-  --scope "1.1-3.3.1" \
-  --dry-run
+python -m src.cli from-pdf --pdf data/template/dsr.pdf --template data/template/signal_assessment_template.docx --ib data/template/ib.pdf --scope "1-6" --dry-run
 ```
 
 ### Disable vector matching
@@ -135,12 +106,7 @@ python -m src.cli from-pdf \
 If you want keyword-only matching (no embeddings API calls):
 
 ```bash
-python -m src.cli from-pdf \
-  --pdf data/input/dsr.pdf \
-  --template data/templates/signal_assessment_template.txt \
-  --ib data/input/ib.pdf \
-  --scope "1.1-3.3.1" \
-  --no-vectors
+python -m src.cli from-pdf --pdf data/template/dsr.pdf --template data/template/signal_assessment_template.docx --ib data/template/ib.pdf --scope "1-6" --no-vectors
 ```
 
 ### All options
@@ -152,7 +118,7 @@ python -m src.cli from-pdf \
 | `--index-csv` | Path to section index CSV (from-sections only) |
 | `--template` | Path to regulatory template (`.txt` or `.docx`) |
 | `--ib` | Path to Investigator's Brochure PDF |
-| `--scope` | Section range, e.g. `"1.1-3.3.1"` |
+| `--scope` | Section range, e.g. `"1-6"` |
 | `--pbrer` | Path to PBRER PDF for auto-extraction (optional) |
 | `--pbrer-index` | Path to pre-built PBRER index JSON from `pbrer_slicer` (optional) |
 | `--literature` | Path to literature index JSON (optional) |
@@ -164,13 +130,13 @@ python -m src.cli from-pdf \
 
 ## Output
 
-The pipeline generates these files in the output directory:
+The pipeline generates these files:
 
-- `source_rules.yaml` -- extracted source rules per template section
-- `section_mapping.yaml` -- DSR-to-template mapping with match methods
-- `compliance_snapshot.csv` -- status of every section
-- `filled_template.md` -- populated report in markdown
-- `filled_template.docx` -- populated report in Word format
+- `data/output/filled_template.md` -- populated report in markdown
+- `data/output/filled_template.docx` -- populated report in Word format
+- `data/mappings/source_rules.yaml` -- extracted source rules per template section
+- `data/mappings/section_mapping.yaml` -- DSR-to-template mapping with match methods
+- `data/mappings/compliance_snapshot.csv` -- status of every section
 - Traced `.md` files with `SOURCE TRACE` blocks for audit
 
 ## Running tests
@@ -179,27 +145,38 @@ The pipeline generates these files in the output directory:
 python -m pytest tests/ -v
 ```
 
+154 tests covering IB extraction, source resolution, template parsing, and report assembly.
+
 ## File structure
 
 ```
+data/
+  template/                 # Your input files go here
+    dsr.pdf
+    ib.pdf
+    pbrer.pdf
+    pbrer_index.json        # Generated by pbrer_slicer (Step 4)
+    signal_assessment_template.docx
+  output/                   # Generated reports appear here
+  mappings/                 # Compliance deliverables appear here
 src/
-  cli.py              # CLI entry point (from-pdf, from-sections)
-  config.py           # Configuration dataclass
-  models.py           # Pydantic data models
-  pdf_extractor.py    # PDF section extraction + tables + OCR
-  ib_extractor.py     # IB PDF indexing
-  pbrer_extractor.py  # PBRER PDF indexing (auto-extraction)
-  pbrer_slicer.py     # PBRER page slicer (targeted extraction)
-  ib_resolver.py      # Source classification + multi-index resolution
-  literature_resolver.py  # Clinical literature loader
-  template_parser.py  # Template parsing (.txt/.docx) + mapping table
-  section_mapper.py   # 4-pass section matching
-  template_populator.py   # Filled report assembly (md + docx)
-  vector_store.py     # FAISS + OpenAI embeddings
-  chunker.py          # Token-aware text chunking
-  deliverables.py     # Deliverable file generation
-  validators.py       # 10-check validation suite
-  utils.py            # Logging and helpers
+  cli.py                    # CLI entry point (from-pdf, from-sections)
+  config.py                 # Configuration dataclass
+  models.py                 # Pydantic data models
+  pdf_extractor.py          # PDF section extraction + tables + OCR
+  ib_extractor.py           # IB PDF indexing
+  pbrer_extractor.py        # PBRER PDF indexing (auto-extraction)
+  pbrer_slicer.py           # PBRER page slicer (targeted extraction)
+  ib_resolver.py            # Source classification + multi-index resolution
+  literature_resolver.py    # Clinical literature loader
+  template_parser.py        # Template parsing (.txt/.docx) + mapping table
+  section_mapper.py         # 4-pass section matching
+  template_populator.py     # Filled report assembly (md + docx)
+  vector_store.py           # FAISS + OpenAI embeddings
+  chunker.py                # Token-aware text chunking
+  deliverables.py           # Deliverable file generation
+  validators.py             # 10-check validation suite
+  utils.py                  # Logging and helpers
 tests/
-  test_*.py           # 145 tests
+  test_*.py                 # 154 tests
 ```
