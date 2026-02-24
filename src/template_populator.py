@@ -157,13 +157,10 @@ def assemble_markdown(
         hashes = "#" * level
         lines.append(f"{hashes} {section.section_id} {section.title}\n")
 
-        # Skip children without their own sources when the parent section
-        # is in the list — the parent's body already covers them.
-        if _should_skip_child(section.section_id):
-            continue
-
         # Check if this is an Executive Summary subsection (1.x) — defer
-        # to the second pass so it can summarize the completed report.
+        # to the second pass so it can use IB content + completed report.
+        # This MUST come before the dedup skip, otherwise the placeholder
+        # is never inserted and the second pass has nothing to fill.
         is_exec_summary = (
             section.section_id.startswith("1.")
             and not section.required_sources
@@ -172,6 +169,11 @@ def assemble_markdown(
         if is_exec_summary:
             # Placeholder marker; will be replaced in second pass
             lines.append(f"{{{{EXEC_SUMMARY_{section.section_id}}}}}\n")
+            continue
+
+        # Skip children without their own sources when the parent section
+        # is in the list — the parent's body already covers them.
+        if _should_skip_child(section.section_id):
             continue
 
         section_text = ""
